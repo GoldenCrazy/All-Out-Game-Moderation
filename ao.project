@@ -1,0 +1,10 @@
+{
+    csl: true
+    projects:
+    [
+        {
+            name: "Game Bans Test"
+            id: "6a19f63b21bf9d76b0514958"
+        }
+    ]
+}

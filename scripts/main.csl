@@ -1,0 +1,52 @@
+import "core:ao"
+
+// Game wide systems
+ao_before_scene_load :: proc() {
+    // Called before the scene is loaded (economy registration etc...)
+}
+
+ao_start :: proc() {
+
+}
+
+ao_update :: proc(dt: float) {
+
+}
+
+ao_late_update :: proc(dt: float) {
+
+}
+
+// Per player state
+Player :: class : Player_Base {
+    ao_start :: method() {
+        // Basically on awake/join
+    }
+
+    ao_update :: method(dt: float) {
+        // Every frame
+    }
+
+    ao_late_update :: method(dt: float) {
+        // After physics runs, all UI must be rendered from here
+    }
+
+    ao_end :: method() {
+        // On destroy
+    }
+
+    ao_can_use_ability :: method(ability: Ability_Base) -> bool {
+        // Global ability callback for example don't allow use when dead
+        return true;
+    }
+
+    ao_can_use_interactable :: method(interactable: Interactable) -> bool {
+        // Global interactable callback
+        return true;
+    }
+
+    ao_on_state_sync :: method() {
+        // Called on the client after applying a state sync from the server
+        // Use this to override things for the local player only like name colors or lighting for example
+    }
+}
