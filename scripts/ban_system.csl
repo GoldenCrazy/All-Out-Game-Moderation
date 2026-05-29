@@ -1,0 +1,109 @@
+// ban_system.csl
+// Admin ban/unban chat commands.
+// Ban state is persisted per-player using the Save API so it survives reconnects.
+
+BAN_SAVE_KEY        :: "ban_status";      // "1" = banned, "0" or missing = not banned
+BAN_REASON_SAVE_KEY :: "ban_reason";
+
+// ---------------------------------------------------------------------------
+// Called once on join inside Player.ao_start to restore persisted ban state.
+// ---------------------------------------------------------------------------
+load_ban_state :: proc(player: Player) {
+    banned_val := Save.get_string(player, BAN_SAVE_KEY, "0");
+    player.is_banned = banned_val == "1";
+    if player.is_banned {
+        player.ban_reason = Save.get_string(player, BAN_REASON_SAVE_KEY, "No reason given");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// /ban {username} {reason...}   — bans a currently connected player
+// Only game owner/editors can use this.
+// The reason can contain spaces — everything after the username is joined.
+// ---------------------------------------------------------------------------
+ban :: proc(issuer: Player, args: []string) {
+    if len(args) < 1 {
+        Notifier.notify(issuer, "Usage: /ban {username} {reason}");
+        return;
+    }
+
+    username := args[0];
+    reason   := len(args) > 1 ? strings.join(args[1:], " ") : "No reason given";
+
+    found := false;
+    for p: component_iterator(Player) {
+        if p.get_username() == username {
+            if issuer.get_user_id() == p.get_user_id() {
+                Notifier.notify(issuer, "You cannot ban yourself.");
+                return;
+            }
+            p.is_banned = true;
+            p.ban_reason = reason;
+            Save.set_string(p, BAN_SAVE_KEY, "1");
+            Save.set_string(p, BAN_REASON_SAVE_KEY, reason);
+            Notifier.notify(issuer, "Banned % for: %", {username, reason});
+            found = true;
+        }
+    }
+    if !found {
+        Notifier.notify(issuer, "Player '%' not found in game.", {username});
+    }
+} @chat_command @owner_or_editor
+
+// ---------------------------------------------------------------------------
+// /unban {username}   — unbans a currently connected player
+// Only game owner/editors can use this.
+// ---------------------------------------------------------------------------
+unban :: proc(issuer: Player, username: string) {
+    found := false;
+    for p: component_iterator(Player) {
+        if p.get_username() == username {
+            p.is_banned = false;
+            p.ban_reason = "";
+            Save.set_string(p, BAN_SAVE_KEY, "0");
+            Save.delete_key(p, BAN_REASON_SAVE_KEY);
+            Notifier.notify(issuer, "Unbanned %.", {username});
+            found = true;
+        }
+    }
+    if !found {
+        Notifier.notify(issuer, "Player '%' not found in game.", {username});
+    }
+} @chat_command @owner_or_editor
+
+// ---------------------------------------------------------------------------
+// Ban screen UI — call from Player.ao_late_update inside is_local_or_server()
+// Uses rect_window_large to cover as much of the screen as possible.
+// ---------------------------------------------------------------------------
+draw_ban_screen :: proc(player: Player) {
+    if !player.is_banned {
+        return;
+    }
+
+    UIK.begin(UIK.modal(UIK.rect_window_large(), 999));
+
+    bg := UIK.panel_styled(.MODAL_BLACK);
+    bg.width = UIK.flex(1);
+    bg.height = UIK.flex(1);
+    UIK.panel_begin(bg);
+
+    center := UIK.layout_column();
+    center.width = UIK.flex(1);
+    center.height = UIK.flex(1);
+    center.gap = 16;
+    center.main_align = .CENTER;
+    center.cross_align = .CENTER;
+    UIK.panel_begin(center);
+
+    ban_title := UIK.text_title();
+    ban_title.color = {0.9, 0.08, 0.08, 1.0};
+    UIK.text(ban_title, "You are banned from this game");
+
+    reason_text := UIK.text_body();
+    reason_text.color = {0.85, 0.85, 0.85, 1.0};
+    UIK.text(reason_text, "Reason: %", {player.ban_reason});
+
+    UIK.panel_end(); // center
+    UIK.panel_end(); // bg
+    UIK.end();
+}

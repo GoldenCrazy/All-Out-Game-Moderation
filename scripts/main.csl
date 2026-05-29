@@ -19,16 +19,26 @@ ao_late_update :: proc(dt: float) {
 
 // Per player state
 Player :: class : Player_Base {
+    is_banned:  bool;
+    ban_reason: string;
+
     ao_start :: method() {
-        // Basically on awake/join
+        // Restore ban state from save so it survives reconnects
+        load_ban_state(this);
     }
 
     ao_update :: method(dt: float) {
-        // Every frame
+        // Freeze banned players every frame so they can't move
+        if is_banned {
+            add_freeze_reason("banned");
+        }
     }
 
     ao_late_update :: method(dt: float) {
         // After physics runs, all UI must be rendered from here
+        if is_local_or_server() {
+            draw_ban_screen(this);
+        }
     }
 
     ao_end :: method() {
@@ -36,12 +46,18 @@ Player :: class : Player_Base {
     }
 
     ao_can_use_ability :: method(ability: Ability_Base) -> bool {
-        // Global ability callback for example don't allow use when dead
+        // Banned players cannot use abilities
+        if is_banned {
+            return false;
+        }
         return true;
     }
 
     ao_can_use_interactable :: method(interactable: Interactable) -> bool {
-        // Global interactable callback
+        // Banned players cannot interact with anything
+        if is_banned {
+            return false;
+        }
         return true;
     }
 
