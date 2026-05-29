@@ -21,14 +21,10 @@ load_ban_state :: proc(player: Player) {
 // Only game owner/editors can use this.
 // The reason can contain spaces — everything after the username is joined.
 // ---------------------------------------------------------------------------
-ban :: proc(issuer: Player, args: []string) {
-    if len(args) < 1 {
-        Notifier.notify(issuer, "Usage: /ban {username} {reason}");
-        return;
+ban :: proc(issuer: Player, username: string, reason: string = "No reason given") {
+    if reason == "" {
+        reason = "No reason given";
     }
-
-    username := args[0];
-    reason   := len(args) > 1 ? strings.join(args[1:], " ") : "No reason given";
 
     found := false;
     for p: component_iterator(Player) {
