@@ -1,6 +1,6 @@
 # Game Moderation System
 
-A suite of moderation tools including ban, temp ban, warn, and kick — with persistent ban state, full-screen overlays, and owner/editor-only chat commands.
+A suite of moderation tools including ban, temp ban, warn, and kick — with persistent ban state, full-screen overlays, and a custom admin allowlist.
 
 ---
 
@@ -17,7 +17,7 @@ A suite of moderation tools including ban, temp ban, warn, and kick — with per
 - Full-screen warn overlay shown to warned players (dismissible via a Close button)
 - Banned players are **frozen**, **cannot use abilities**, and **cannot interact** with anything
 - Temp bans **expire automatically** — even if the player stays online
-- Commands are restricted to **game owner and editors only**
+- Commands are restricted to players on the **admin allowlist** (configured in `admin_system.csl`)
 
 ---
 
@@ -72,7 +72,11 @@ id:   "654eedec2412b8afb8a993ca"
 
 > You can find your game ID in your public games link.
 
-**3. You're done.** All systems are already wired up — `ban_system.csl`, `warn_system.csl`, and `kick_system.csl` are included and `main.csl` already has all the hooks in place. Jump straight to [Using the Commands](#using-the-commands).
+![Finding your game ID](.github/images/gameID.png)
+
+**3. Configure your admin allowlist** — open `admin_system.csl` and follow the steps in [Configuring Admins](#configuring-admins) below.
+
+**4. You're done.** All systems are already wired up — jump straight to [Using the Commands](#using-the-commands).
 
 ---
 
@@ -82,11 +86,20 @@ If you already have a game and just want to drop these systems in, follow these 
 
 **1. Copy the system files** into your project alongside your existing `.csl` files. Don't modify them — they are self-contained.
 
+- `admin_system.csl`
 - `ban_system.csl`
 - `warn_system.csl`
 - `kick_system.csl`
 
 **2. Hook them into your `main.csl`** by adding the following fields and calls in the matching places.
+
+#### In `ao_before_scene_load` — initialize the admin allowlist:
+
+```csl
+ao_before_scene_load :: proc() {
+    init_admin_allowlist();  // ← add this
+}
+```
 
 #### On your `Player` class, add these fields:
 
@@ -169,9 +182,49 @@ That's everything. All commands are automatically registered via `@chat_command`
 
 ---
 
-## Using the Commands
+## Configuring Admins
 
-All commands are restricted to the **game owner and editors** only.
+Who can use the moderation commands is controlled entirely in `admin_system.csl`. There are two ways to grant access:
+
+### Option 1 — Set the owner slot
+
+Find this line near the top of `admin_system.csl`:
+
+```csl
+OWNER_USER_ID :: "";
+```
+
+Replace the empty string with your user ID:
+
+```csl
+OWNER_USER_ID :: "66d372c41e013ebdae491c3f";
+```
+
+This is a dedicated slot for the game owner. You don't need to also add yourself to the list below.
+
+### Option 2 — Add admins to the allowlist
+
+Inside `init_admin_allowlist`, add one line per user:
+
+```csl
+init_admin_allowlist :: proc() {
+    // ...
+    allowed_admin_user_ids.append("6580bccd9883d7e53c069e22");
+    allowed_admin_user_ids.append("another_user_id_here");
+}
+```
+
+Any player whose user ID is in the list (or matches `OWNER_USER_ID`) can use all moderation commands. Everyone else will see:
+
+![Permission denied](.github/images/permission.png)
+
+> **How do I find a user ID?** You can find it in your profile link.
+
+![Finding your user ID](.github/images/userID.png)
+
+---
+
+## Using the Commands
 
 ### Ban a player (permanent)
 
@@ -186,6 +239,8 @@ The reason can be multiple words — everything after the username is captured.
 /ban ot_golden Spamming the chat
 /ban Mas No reason given
 ```
+
+![Permanent ban screen](.github/images/permBan.png)
 
 ### Temp ban a player
 
@@ -203,6 +258,8 @@ Duration format: a number followed by a unit — `m` (minutes), `h` (hours), `d`
 
 The ban screen shows the time remaining and updates live. The ban expires automatically whether the player is online or offline.
 
+![Temp ban screen](.github/images/tempBan.png)
+
 ### Unban a player
 
 ```
@@ -219,14 +276,14 @@ The ban screen shows the time remaining and updates live. The ban expires automa
 /warn {username} {reason}
 ```
 
-The reason can be multiple words.
-
 ```
 /warn Matt Please follow the rules
 /warn ot_golden Stop spamming
 ```
 
-The warned player sees a full-screen overlay with the reason. They can dismiss it by clicking the **Close** button. Warnings are not saved — they clear when the player disconnects.
+The warned player sees a full-screen overlay with the reason and also receives a chat notification. They can dismiss the overlay by clicking the **Close** button. Warnings are not saved — they clear when the player disconnects.
+
+![Warning screen](.github/images/warning.png)
 
 ### Kick a player
 
@@ -239,6 +296,8 @@ The warned player sees a full-screen overlay with the reason. They can dismiss i
 /kick ot_golden No reason given
 ```
 
+![Kicked screen](.github/images/kicked.png)
+
 > **Note:** The player must be **currently connected** to the game for all commands to work. Ban state persists — if you ban someone while they're online, they will still be banned when they rejoin.
 
 ---
@@ -247,11 +306,11 @@ The warned player sees a full-screen overlay with the reason. They can dismiss i
 
 Ban state is saved per-player using the Save API. Warnings and kicks are not persisted.
 
-| Key              | Value                            |
-|------------------|----------------------------------|
-| `ban_status`     | `"1"` if banned, `"0"` if not   |
-| `ban_reason`     | The reason string                |
-| `ban_expires_s`  | Unix timestamp (seconds) of expiry, or `0` for permanent |
+| Key             | Value                                                      |
+|-----------------|------------------------------------------------------------|
+| `ban_status`    | `"1"` if banned, `"0"` if not                             |
+| `ban_reason`    | The reason string                                          |
+| `ban_expires_s` | Unix timestamp (seconds) of expiry, or `0` for permanent  |
 
 When a player joins, `load_ban_state` reads these keys and restores their ban state automatically. If a temp ban has already expired, it is cleared immediately on join. When a player is unbanned, all keys are cleared.
 
@@ -259,10 +318,11 @@ When a player joins, `load_ban_state` reads these keys and restores their ban st
 
 ## File Reference
 
-| File               | Purpose                                                   |
-|--------------------|-----------------------------------------------------------|
-| `ban_system.csl`   | Ban, temp ban, and unban logic, commands, and UI          |
-| `warn_system.csl`  | Warn command and dismissible warning overlay UI           |
-| `kick_system.csl`  | Kick command                                              |
-| `main.csl`         | Your game entry point — hooks into all moderation systems |
-| `ao.project`       | Project config — update `name` and `id` if cloning       |
+| File               | Purpose                                                        |
+|--------------------|----------------------------------------------------------------|
+| `admin_system.csl` | Admin allowlist — controls who can use moderation commands     |
+| `ban_system.csl`   | Ban, temp ban, and unban logic, commands, and UI               |
+| `warn_system.csl`  | Warn command and dismissible warning overlay UI                |
+| `kick_system.csl`  | Kick command                                                   |
+| `main.csl`         | Game entry point — hooks into all moderation systems           |
+| `ao.project`       | Project config — update `name` and `id` if cloning            |

@@ -3,6 +3,7 @@ import "core:ao"
 // Game wide systems
 ao_before_scene_load :: proc() {
     // Called before the scene is loaded (economy registration etc...)
+    init_admin_allowlist();
 }
 
 ao_start :: proc() {

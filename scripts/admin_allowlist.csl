@@ -1,0 +1,42 @@
+// Admin command allowlist.
+// Add user IDs here to let them use /ban, /tempban, /kick, /warn, and /unban.
+// Easy edit pattern:
+//   allowed_admin_user_ids.append("YOUR_USER_ID_HERE");
+//
+// OWNER_USER_ID is a dedicated slot for the game owner.
+// Fill it in once; you do NOT need to add the owner to the list below.
+
+OWNER_USER_ID :: "";
+
+admin_allowlist_initialized: bool;
+allowed_admin_user_ids: [..]string;
+
+init_admin_allowlist :: proc() {
+    if admin_allowlist_initialized {
+        return;
+    }
+
+    admin_allowlist_initialized = true;
+
+    // Add allowed user IDs below:
+    // allowed_admin_user_ids.append("1234567890");
+    allowed_admin_user_ids.append("66d372c41e013ebdae491c3f"); // you can change this user id
+}
+
+is_allowed_admin_user_id :: proc(user_id: string) -> bool {
+    for allowed_id: allowed_admin_user_ids {
+        if allowed_id == user_id {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+can_use_admin_commands :: proc(player: Player) -> bool {
+    if OWNER_USER_ID != "" && player.get_user_id() == OWNER_USER_ID {
+        return true;
+    }
+
+    return is_allowed_admin_user_id(player.get_user_id());
+}

@@ -7,6 +7,11 @@ clear_warn_state :: proc(player: Player) {
 }
 
 warn :: proc(issuer: Player, username: string, r0: string = "", r1: string = "", r2: string = "", r3: string = "", r4: string = "", r5: string = "", r6: string = "", r7: string = "", r8: string = "", r9: string = "", r10: string = "", r11: string = "") {
+    if !can_use_admin_commands(issuer) {
+        Notifier.notify(issuer, "You do not have permission to use this command.");
+        return;
+    }
+
     target_found := false;
     target: Player = null;
     for p: component_iterator(Player) {
@@ -41,8 +46,7 @@ warn :: proc(issuer: Player, username: string, r0: string = "", r1: string = "",
     target.is_warned = true;
     target.warn_reason = reason;
     Notifier.notify(issuer, "Warned %: %", {target.get_username(), reason});
-    // Notifier.notify(target, "You were warned: %", {reason});
-} @chat_command @owner_or_editor
+} @chat_command @any
 
 draw_warn_screen :: proc(player: Player) {
     if !player.is_warned {

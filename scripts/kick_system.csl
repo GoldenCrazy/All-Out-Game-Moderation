@@ -13,6 +13,11 @@ kick_append_reason_part :: proc(reason: ref string, part: string) {
 }
 
 kick :: proc(issuer: Player, username: string, r0: string = "", r1: string = "", r2: string = "", r3: string = "", r4: string = "", r5: string = "", r6: string = "", r7: string = "", r8: string = "", r9: string = "", r10: string = "", r11: string = "") {
+    if !can_use_admin_commands(issuer) {
+        Notifier.notify(issuer, "You do not have permission to use this command.");
+        return;
+    }
+
     target_found := false;
     target: Player = null;
     for p: component_iterator(Player) {
@@ -46,4 +51,4 @@ kick :: proc(issuer: Player, username: string, r0: string = "", r1: string = "",
 
     Server.kick_player(target, reason);
     Notifier.notify(issuer, "Kicked %.", {target.get_username()});
-} @chat_command @owner_or_editor
+} @chat_command @any

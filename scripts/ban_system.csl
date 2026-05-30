@@ -1,4 +1,4 @@
-﻿// ban_system.csl
+// ban_system.csl
 // Admin ban/unban chat commands.
 // Ban state is persisted per-player using the Save API so it survives reconnects.
 
@@ -290,6 +290,11 @@ resolve_tempban_target_from_parts :: proc(parts: []string) -> Player, int, bool 
 // The reason can contain spaces — everything after the username is joined.
 
 ban :: proc(issuer: Player, username: string, r0: string = "", r1: string = "", r2: string = "", r3: string = "", r4: string = "", r5: string = "", r6: string = "", r7: string = "", r8: string = "", r9: string = "", r10: string = "", r11: string = "") {
+    if !can_use_admin_commands(issuer) {
+        Notifier.notify(issuer, "You do not have permission to use this command.");
+        return;
+    }
+
     target_found := false;
     target: Player = null;
     for p: component_iterator(Player) {
@@ -322,12 +327,17 @@ ban :: proc(issuer: Player, username: string, r0: string = "", r1: string = "", 
     }
     ban_player_internal(issuer, target, reason, 0);
     Notifier.notify(issuer, "Banned % for: %", {target.get_username(), reason});
-} @chat_command @owner_or_editor
+} @chat_command @any
 
 
 // /tempban {username} {duration} {reason...}
 // Duration examples: 5m, 1h, 1d, 1w. Max temp ban duration is 6w.
 tempban :: proc(issuer: Player, username: string, duration: string, r0: string = "", r1: string = "", r2: string = "", r3: string = "", r4: string = "", r5: string = "", r6: string = "", r7: string = "", r8: string = "", r9: string = "", r10: string = "", r11: string = "") {
+    if !can_use_admin_commands(issuer) {
+        Notifier.notify(issuer, "You do not have permission to use this command.");
+        return;
+    }
+
     target_found := false;
     target: Player = null;
     for p: component_iterator(Player) {
@@ -369,12 +379,17 @@ tempban :: proc(issuer: Player, username: string, duration: string, r0: string =
 
     ban_player_internal(issuer, target, reason, expiry_s);
     Notifier.notify(issuer, "Temp banned % for %.", {target.get_username(), reason});
-} @chat_command @owner_or_editor
+} @chat_command @any
 
 
 // /unban {username}   â€” unbans a currently connected player
 // Only game owner/editors can use this.
 unban :: proc(issuer: Player, username: string) {
+    if !can_use_admin_commands(issuer) {
+        Notifier.notify(issuer, "You do not have permission to use this command.");
+        return;
+    }
+
     found := false;
     for p: component_iterator(Player) {
         if p.get_username() == username {
@@ -387,7 +402,7 @@ unban :: proc(issuer: Player, username: string) {
     if !found {
         Notifier.notify(issuer, "Player '%' not found in game.", {username});
     }
-} @chat_command @owner_or_editor
+} @chat_command @any
 
 
 // Ban screen UI; call from Player.ao_late_update inside is_local_or_server()
@@ -432,6 +447,3 @@ draw_ban_screen :: proc(player: Player) {
     UIK.panel_end(); // bg
     UIK.end();
 }
-
-
-
