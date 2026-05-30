@@ -19,8 +19,12 @@ ao_late_update :: proc(dt: float) {
 
 // Per player state
 Player :: class : Player_Base {
-    is_banned:  bool;
-    ban_reason: string;
+    is_banned:          bool;
+    ban_reason:         string;
+    ban_expires_at_s:    s64;
+    ban_freeze_applied: bool;
+    is_warned:           bool;
+    warn_reason:         string;
 
     ao_start :: method() {
         // Restore ban state from save so it survives reconnects
@@ -28,15 +32,26 @@ Player :: class : Player_Base {
     }
 
     ao_update :: method(dt: float) {
-        // Freeze banned players every frame so they can't move
-        if is_banned {
+        // Clear temp bans once they expire, even if the player stays online.
+        current_time_s := (get_nanoseconds_since_epoch() / 1000000000).(s64);
+        if is_banned && ban_expires_at_s > 0 && current_time_s >= ban_expires_at_s {
+            clear_ban_state(this);
+        }
+
+        // Apply the freeze once while banned, and remove it once when unbanned.
+        if is_banned && !ban_freeze_applied {
             add_freeze_reason("banned");
+            ban_freeze_applied = true;
+        } else if !is_banned && ban_freeze_applied {
+            remove_freeze_reason("banned");
+            ban_freeze_applied = false;
         }
     }
 
     ao_late_update :: method(dt: float) {
         // After physics runs, all UI must be rendered from here
         if is_local_or_server() {
+            draw_warn_screen(this);
             draw_ban_screen(this);
         }
     }

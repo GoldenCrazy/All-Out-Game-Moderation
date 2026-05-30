@@ -2,18 +2,287 @@
 // Admin ban/unban chat commands.
 // Ban state is persisted per-player using the Save API so it survives reconnects.
 
-BAN_SAVE_KEY        :: "ban_status";      // "1" = banned, "0" or missing = not banned
-BAN_REASON_SAVE_KEY :: "ban_reason";
+BAN_SAVE_KEY             :: "ban_status";      // "1" = banned, "0" or missing = not banned
+BAN_REASON_SAVE_KEY      :: "ban_reason";
+BAN_EXPIRES_S_SAVE_KEY   :: "ban_expires_s";   // 0 = permanent ban
+BAN_EXPIRES_NS_SAVE_KEY  :: "ban_expires_ns";  // legacy key kept for migration
+TEMP_BAN_MAX_SECONDS     :: 6 * 7 * 24 * 60 * 60;
+NANOSECONDS_PER_SECOND   :: 1000000000;
 
 // ---------------------------------------------------------------------------
 // Called once on join inside Player.ao_start to restore persisted ban state.
 // ---------------------------------------------------------------------------
 load_ban_state :: proc(player: Player) {
     banned_val := Save.get_string(player, BAN_SAVE_KEY, "0");
-    player.is_banned = banned_val == "1";
-    if player.is_banned {
-        player.ban_reason = Save.get_string(player, BAN_REASON_SAVE_KEY, "No reason given");
+    if banned_val != "1" {
+        player.is_banned = false;
+        player.ban_reason = "";
+        player.ban_expires_at_s = 0;
+        player.remove_freeze_reason("banned");
+        return;
     }
+
+    player.ban_reason = Save.get_string(player, BAN_REASON_SAVE_KEY, "No reason given");
+    expires_at_s := Save.get_int(player, BAN_EXPIRES_S_SAVE_KEY, 0);
+    if expires_at_s <= 0 {
+        legacy_expires := Save.get_int(player, BAN_EXPIRES_NS_SAVE_KEY, 0);
+        if legacy_expires > 1000000000000 {
+            expires_at_s = legacy_expires / NANOSECONDS_PER_SECOND;
+        } else {
+            expires_at_s = legacy_expires;
+        }
+        if expires_at_s > 0 {
+            Save.set_int(player, BAN_EXPIRES_S_SAVE_KEY, expires_at_s);
+        }
+    }
+
+    player.ban_expires_at_s = expires_at_s;
+
+    current_time_s := (get_nanoseconds_since_epoch() / NANOSECONDS_PER_SECOND).(s64);
+    if player.ban_expires_at_s > 0 && current_time_s >= player.ban_expires_at_s {
+        clear_ban_state(player);
+        return;
+    }
+
+    player.is_banned = true;
+}
+
+parse_digit :: proc(ch: string) -> s64 {
+    switch ch {
+        case "0": return 0;
+        case "1": return 1;
+        case "2": return 2;
+        case "3": return 3;
+        case "4": return 4;
+        case "5": return 5;
+        case "6": return 6;
+        case "7": return 7;
+        case "8": return 8;
+        case "9": return 9;
+        default: return -1;
+    }
+}
+
+parse_positive_int :: proc(text: string) -> s64 {
+    trimmed := string_trim(text);
+    if trimmed == "" {
+        return -1;
+    }
+
+    result: s64 = 0;
+    for i: 0..trimmed.count-1 {
+        ch := string_substring(trimmed, i, 1);
+        digit := parse_digit(ch);
+        if digit < 0 {
+            return -1;
+        }
+        result = result * 10 + digit;
+    }
+
+    return result;
+}
+
+format_ban_time_remaining :: proc(expires_at_s: s64) -> string {
+    if expires_at_s <= 0 {
+        return "Permanent";
+    }
+
+    current_time_s := (get_nanoseconds_since_epoch() / NANOSECONDS_PER_SECOND).(s64);
+    if current_time_s >= expires_at_s {
+        return "Expired";
+    }
+
+    remaining_seconds := expires_at_s - current_time_s;
+    weeks := remaining_seconds / (7 * 24 * 60 * 60);
+    remaining_seconds -= weeks * (7 * 24 * 60 * 60);
+    days := remaining_seconds / (24 * 60 * 60);
+    remaining_seconds -= days * (24 * 60 * 60);
+    hours := remaining_seconds / (60 * 60);
+    remaining_seconds -= hours * (60 * 60);
+    minutes := remaining_seconds / 60;
+    remaining_seconds -= minutes * 60;
+
+    if weeks > 0 {
+        return format_string("%w %d %h %m", {weeks, days, hours, minutes});
+    }
+    if days > 0 {
+        return format_string("%d %h %m", {days, hours, minutes});
+    }
+    if hours > 0 {
+        return format_string("%h %m %s", {hours, minutes, remaining_seconds});
+    }
+    if minutes > 0 {
+        return format_string("%m %s", {minutes, remaining_seconds});
+    }
+    return format_string("%s", {remaining_seconds});
+}
+
+clear_ban_state :: proc(player: Player) {
+    player.is_banned = false;
+    player.ban_reason = "";
+    player.ban_expires_at_s = 0;
+    player.ban_freeze_applied = false;
+
+    player.remove_freeze_reason("banned");
+    Save.set_string(player, BAN_SAVE_KEY, "0");
+    Save.delete_key(player, BAN_REASON_SAVE_KEY);
+    Save.delete_key(player, BAN_EXPIRES_S_SAVE_KEY);
+    Save.delete_key(player, BAN_EXPIRES_NS_SAVE_KEY);
+}
+
+parse_temp_ban_duration_s :: proc(duration_text: string) -> s64 {
+    trimmed := to_lower(string_trim(duration_text));
+    if trimmed.count < 2 {
+        return 0;
+    }
+
+    unit := string_substring(trimmed, trimmed.count - 1, 1);
+    value_text := string_trim(string_substring(trimmed, 0, trimmed.count - 1));
+
+    amount := parse_positive_int(value_text);
+    if amount <= 0 {
+        return 0;
+    }
+
+    seconds_per_unit: s64 = 0;
+    if unit == "m" {
+        seconds_per_unit = 60;
+    } else if unit == "h" {
+        seconds_per_unit = 60 * 60;
+    } else if unit == "d" {
+        seconds_per_unit = 60 * 60 * 24;
+    } else if unit == "w" {
+        seconds_per_unit = 60 * 60 * 24 * 7;
+    } else {
+        return 0;
+    }
+
+    total_seconds := amount * seconds_per_unit;
+    if total_seconds <= 0 || total_seconds > TEMP_BAN_MAX_SECONDS {
+        return 0;
+    }
+
+    return total_seconds;
+}
+
+ban_player_internal :: proc(issuer: Player, target: Player, reason: string, expires_at_s: s64) {
+    if issuer.get_user_id() == target.get_user_id() {
+        Notifier.notify(issuer, "You cannot ban yourself.");
+        return;
+    }
+
+    target.is_banned = true;
+    target.ban_reason = reason;
+    target.ban_expires_at_s = expires_at_s;
+    Save.set_string(target, BAN_SAVE_KEY, "1");
+    Save.set_string(target, BAN_REASON_SAVE_KEY, reason);
+    Save.set_int(target, BAN_EXPIRES_S_SAVE_KEY, expires_at_s);
+    Save.set_int(target, BAN_EXPIRES_NS_SAVE_KEY, expires_at_s);
+
+    if expires_at_s > 0 {
+        Server.kick_player(target, format_string("Temp banned: %", {reason}));
+    } else {
+        Server.kick_player(target, format_string("Banned: %", {reason}));
+    }
+}
+
+append_reason_part :: proc(reason: ref string, part: string) {
+    if part == "" {
+        return;
+    }
+
+    if reason == "" {
+        reason = part;
+    } else {
+        reason = format_string("% %", {reason, part});
+    }
+}
+
+trim_trailing_empty_parts :: proc(parts: []string) -> int {
+    count := parts.count;
+    while count > 0 && parts[count-1] == "" {
+        count -= 1;
+    }
+    return count;
+}
+
+append_username_part :: proc(username: ref string, part: string) {
+    if part == "" {
+        return;
+    }
+
+    if username == "" {
+        username = part;
+    } else {
+        username = format_string("%_%", {username, part});
+    }
+}
+
+collect_reason_from_parts :: proc(parts: []string, start_index: int) -> string {
+    if start_index >= parts.count {
+        return "No reason given";
+    }
+
+    reason := "";
+    for i: start_index..parts.count-1 {
+        append_reason_part(ref reason, parts[i]);
+    }
+    if reason == "" {
+        reason = "No reason given";
+    }
+    return reason;
+}
+
+resolve_player_from_parts :: proc(parts: []string) -> Player, int, bool {
+    count := trim_trailing_empty_parts(parts);
+    if count <= 0 {
+        return null, 0, false;
+    }
+
+    for offset: 0..count-1 {
+        candidate_count := count - offset;
+        candidate := "";
+        for i: 0..candidate_count-1 {
+            append_username_part(ref candidate, parts[i]);
+        }
+
+        for p: component_iterator(Player) {
+            if p.get_username() == candidate {
+                return p, candidate_count, true;
+            }
+        }
+    }
+
+    return null, 0, false;
+}
+
+resolve_tempban_target_from_parts :: proc(parts: []string) -> Player, int, bool {
+    count := trim_trailing_empty_parts(parts);
+    if count < 2 {
+        return null, 0, false;
+    }
+
+    for offset: 0..count-2 {
+        candidate_count := count - 1 - offset;
+        duration_index := candidate_count;
+        duration_text := parts[duration_index];
+        if parse_temp_ban_duration_s(duration_text) <= 0 {
+            continue;
+        }
+
+        candidate := "";
+        for i: 0..candidate_count-1 {
+            append_username_part(ref candidate, parts[i]);
+        }
+
+        for p: component_iterator(Player) {
+            if p.get_username() == candidate {
+                return p, duration_index, true;
+            }
+        }
+    }
+
+    return null, 0, false;
 }
 
 // ---------------------------------------------------------------------------
@@ -21,45 +290,101 @@ load_ban_state :: proc(player: Player) {
 // Only game owner/editors can use this.
 // The reason can contain spaces — everything after the username is joined.
 // ---------------------------------------------------------------------------
-ban :: proc(issuer: Player, username: string, reason: string = "No reason given") {
+ban :: proc(issuer: Player, username: string, r0: string = "", r1: string = "", r2: string = "", r3: string = "", r4: string = "", r5: string = "", r6: string = "", r7: string = "", r8: string = "", r9: string = "", r10: string = "", r11: string = "") {
+    target_found := false;
+    target: Player = null;
+    for p: component_iterator(Player) {
+        if p.get_username() == username {
+            target = p;
+            target_found = true;
+            break;
+        }
+    }
+    if !target_found {
+        Notifier.notify(issuer, "Player not found in game.");
+        return;
+    }
+
+    reason := "";
+    append_reason_part(ref reason, r0);
+    append_reason_part(ref reason, r1);
+    append_reason_part(ref reason, r2);
+    append_reason_part(ref reason, r3);
+    append_reason_part(ref reason, r4);
+    append_reason_part(ref reason, r5);
+    append_reason_part(ref reason, r6);
+    append_reason_part(ref reason, r7);
+    append_reason_part(ref reason, r8);
+    append_reason_part(ref reason, r9);
+    append_reason_part(ref reason, r10);
+    append_reason_part(ref reason, r11);
     if reason == "" {
         reason = "No reason given";
     }
-
-    found := false;
-    for p: component_iterator(Player) {
-        if p.get_username() == username {
-            if issuer.get_user_id() == p.get_user_id() {
-                Notifier.notify(issuer, "You cannot ban yourself.");
-                return;
-            }
-            p.is_banned = true;
-            p.ban_reason = reason;
-            Save.set_string(p, BAN_SAVE_KEY, "1");
-            Save.set_string(p, BAN_REASON_SAVE_KEY, reason);
-            Notifier.notify(issuer, "Banned % for: %", {username, reason});
-            found = true;
-        }
-    }
-    if !found {
-        Notifier.notify(issuer, "Player '%' not found in game.", {username});
-    }
+    ban_player_internal(issuer, target, reason, 0);
+    Notifier.notify(issuer, "Banned % for: %", {target.get_username(), reason});
 } @chat_command @owner_or_editor
 
 // ---------------------------------------------------------------------------
-// /unban {username}   — unbans a currently connected player
+// /tempban {username} {duration} {reason...}
+// Duration examples: 5m, 1h, 1d, 1w. Max temp ban duration is 6w.
+// ---------------------------------------------------------------------------
+tempban :: proc(issuer: Player, username: string, duration: string, r0: string = "", r1: string = "", r2: string = "", r3: string = "", r4: string = "", r5: string = "", r6: string = "", r7: string = "", r8: string = "", r9: string = "", r10: string = "", r11: string = "") {
+    target_found := false;
+    target: Player = null;
+    for p: component_iterator(Player) {
+        if p.get_username() == username {
+            target = p;
+            target_found = true;
+            break;
+        }
+    }
+    if !target_found {
+        Notifier.notify(issuer, "Player not found in game.");
+        return;
+    }
+
+    duration_seconds := parse_temp_ban_duration_s(duration);
+    if duration_seconds <= 0 {
+        Notifier.notify(issuer, "Invalid duration. Use 5m, 1h, 1d, or 1w up to 6w.");
+        return;
+    }
+
+    reason := "";
+    append_reason_part(ref reason, r0);
+    append_reason_part(ref reason, r1);
+    append_reason_part(ref reason, r2);
+    append_reason_part(ref reason, r3);
+    append_reason_part(ref reason, r4);
+    append_reason_part(ref reason, r5);
+    append_reason_part(ref reason, r6);
+    append_reason_part(ref reason, r7);
+    append_reason_part(ref reason, r8);
+    append_reason_part(ref reason, r9);
+    append_reason_part(ref reason, r10);
+    append_reason_part(ref reason, r11);
+    if reason == "" {
+        reason = "No reason given";
+    }
+    current_time_s := (get_nanoseconds_since_epoch() / NANOSECONDS_PER_SECOND).(s64);
+    expiry_s := current_time_s + duration_seconds;
+
+    ban_player_internal(issuer, target, reason, expiry_s);
+    Notifier.notify(issuer, "Temp banned % for %.", {target.get_username(), reason});
+} @chat_command @owner_or_editor
+
+// ---------------------------------------------------------------------------
+// /unban {username}   â€” unbans a currently connected player
 // Only game owner/editors can use this.
 // ---------------------------------------------------------------------------
 unban :: proc(issuer: Player, username: string) {
     found := false;
     for p: component_iterator(Player) {
         if p.get_username() == username {
-            p.is_banned = false;
-            p.ban_reason = "";
-            Save.set_string(p, BAN_SAVE_KEY, "0");
-            Save.delete_key(p, BAN_REASON_SAVE_KEY);
+            clear_ban_state(p);
             Notifier.notify(issuer, "Unbanned %.", {username});
             found = true;
+            break;
         }
     }
     if !found {
@@ -68,7 +393,7 @@ unban :: proc(issuer: Player, username: string) {
 } @chat_command @owner_or_editor
 
 // ---------------------------------------------------------------------------
-// Ban screen UI — call from Player.ao_late_update inside is_local_or_server()
+// Ban screen UI â€” call from Player.ao_late_update inside is_local_or_server()
 // Uses rect_window_large to cover as much of the screen as possible.
 // ---------------------------------------------------------------------------
 draw_ban_screen :: proc(player: Player) {
@@ -95,6 +420,14 @@ draw_ban_screen :: proc(player: Player) {
     ban_title.color = {0.9, 0.08, 0.08, 1.0};
     UIK.text(ban_title, "You are banned from this game");
 
+    ban_time := UIK.text_body();
+    ban_time.color = {0.95, 0.78, 0.2, 1.0};
+    if player.ban_expires_at_s > 0 {
+        UIK.text(ban_time, "Time left: %", {format_ban_time_remaining(player.ban_expires_at_s)});
+    } else {
+        UIK.text(ban_time, "Time left: Permanent");
+    }
+
     reason_text := UIK.text_body();
     reason_text.color = {0.85, 0.85, 0.85, 1.0};
     UIK.text(reason_text, "Reason: %", {player.ban_reason});
@@ -103,3 +436,6 @@ draw_ban_screen :: proc(player: Player) {
     UIK.panel_end(); // bg
     UIK.end();
 }
+
+
+

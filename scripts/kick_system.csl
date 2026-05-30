@@ -1,0 +1,49 @@
+// Admin kick chat command.
+
+kick_append_reason_part :: proc(reason: ref string, part: string) {
+    if part == "" {
+        return;
+    }
+
+    if reason == "" {
+        reason = part;
+    } else {
+        reason = format_string("% %", {reason, part});
+    }
+}
+
+kick :: proc(issuer: Player, username: string, r0: string = "", r1: string = "", r2: string = "", r3: string = "", r4: string = "", r5: string = "", r6: string = "", r7: string = "", r8: string = "", r9: string = "", r10: string = "", r11: string = "") {
+    target_found := false;
+    target: Player = null;
+    for p: component_iterator(Player) {
+        if p.get_username() == username {
+            target = p;
+            target_found = true;
+            break;
+        }
+    }
+    if !target_found {
+        Notifier.notify(issuer, "Player not found in game.");
+        return;
+    }
+
+    reason := "";
+    kick_append_reason_part(ref reason, r0);
+    kick_append_reason_part(ref reason, r1);
+    kick_append_reason_part(ref reason, r2);
+    kick_append_reason_part(ref reason, r3);
+    kick_append_reason_part(ref reason, r4);
+    kick_append_reason_part(ref reason, r5);
+    kick_append_reason_part(ref reason, r6);
+    kick_append_reason_part(ref reason, r7);
+    kick_append_reason_part(ref reason, r8);
+    kick_append_reason_part(ref reason, r9);
+    kick_append_reason_part(ref reason, r10);
+    kick_append_reason_part(ref reason, r11);
+    if reason == "" {
+        reason = "Kicked.";
+    }
+
+    Server.kick_player(target, reason);
+    Notifier.notify(issuer, "Kicked %.", {target.get_username()});
+} @chat_command @owner_or_editor

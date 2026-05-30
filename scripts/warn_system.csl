@@ -1,0 +1,100 @@
+// Warn system chat command and dismissible warning UI.
+// Warnings are session state only; they are not persisted across reconnects.
+
+clear_warn_state :: proc(player: Player) {
+    player.is_warned = false;
+    player.warn_reason = "";
+}
+
+warn :: proc(issuer: Player, username: string, r0: string = "", r1: string = "", r2: string = "", r3: string = "", r4: string = "", r5: string = "", r6: string = "", r7: string = "", r8: string = "", r9: string = "", r10: string = "", r11: string = "") {
+    target_found := false;
+    target: Player = null;
+    for p: component_iterator(Player) {
+        if p.get_username() == username {
+            target = p;
+            target_found = true;
+            break;
+        }
+    }
+    if !target_found {
+        Notifier.notify(issuer, "Player not found in game.");
+        return;
+    }
+
+    reason := "";
+    append_reason_part(ref reason, r0);
+    append_reason_part(ref reason, r1);
+    append_reason_part(ref reason, r2);
+    append_reason_part(ref reason, r3);
+    append_reason_part(ref reason, r4);
+    append_reason_part(ref reason, r5);
+    append_reason_part(ref reason, r6);
+    append_reason_part(ref reason, r7);
+    append_reason_part(ref reason, r8);
+    append_reason_part(ref reason, r9);
+    append_reason_part(ref reason, r10);
+    append_reason_part(ref reason, r11);
+    if reason == "" {
+        reason = "No reason given";
+    }
+
+    target.is_warned = true;
+    target.warn_reason = reason;
+    Notifier.notify(issuer, "Warned %: %", {target.get_username(), reason});
+    // Notifier.notify(target, "You were warned: %", {reason});
+} @chat_command @owner_or_editor
+
+draw_warn_screen :: proc(player: Player) {
+    if !player.is_warned {
+        return;
+    }
+
+    UIK.begin(UIK.modal(UIK.rect_window_large(), 998));
+
+    shell := UIK.panel_styled(.MODAL_BLACK);
+    shell.width = UIK.flex(1);
+    shell.height = UIK.flex(1);
+    shell.padding = v4{16, 16, 16, 16};
+    shell.gap = 16;
+    UIK.panel_begin(shell);
+
+    content := UIK.layout_column();
+    content.width = UIK.flex(1);
+    content.height = UIK.flex(1);
+    content.gap = 12;
+    content.main_align = .START;
+    content.cross_align = .CENTER;
+    UIK.panel_begin(content);
+
+    text_block := UIK.layout_column();
+    text_block.width = UIK.flex(1);
+    text_block.height = UIK.flex(1);
+    text_block.gap = 12;
+    text_block.main_align = .CENTER;
+    text_block.cross_align = .CENTER;
+    UIK.panel_begin(text_block);
+
+    warn_title := UIK.text_title();
+    warn_title.color = {0.9, 0.08, 0.08, 1.0};
+    UIK.text(warn_title, "You have been warned");
+
+    warn_reason := UIK.text_body();
+    warn_reason.color = {0.85, 0.85, 0.85, 1.0};
+    UIK.text(warn_reason, "Reason: %", {player.warn_reason});
+
+    UIK.panel_end(); // text_block
+
+    UIK.spacer(UIK.pixels(1), UIK.flex(1));
+
+    close_desc := UIK.widget_desc_button_default(.BUTTON_BASIC_RED);
+    close_desc.panel.width = UIK.pixels(160);
+    close_desc.panel.height = UIK.pixels(52);
+    close_btn := UIK.button("warn_close", "Close", close_desc);
+    if close_btn.clicked {
+        clear_warn_state(player);
+    }
+
+    UIK.panel_end(); // content
+    UIK.panel_end(); // shell
+    UIK.end();
+}

@@ -1,23 +1,29 @@
-# Game Ban System
+# Game Moderation System
 
-A ban/unban system with persistent ban state, a full-screen ban UI, and owner/editor-only chat commands.
+A suite of moderation tools including ban, temp ban, warn, and kick — with persistent ban state, full-screen overlays, and owner/editor-only chat commands.
 
 ---
 
 ## Features
 
-- `/ban {username} {reason...}` — bans a connected player with a multi-word reason
+- `/ban {username} {reason...}` — permanently bans a connected player with a multi-word reason
+- `/tempban {username} {duration} {reason...}` — temporarily bans a player for a set duration (up to 6 weeks)
 - `/unban {username}` — unbans a connected player
-- Bans **persist across reconnects** via the Saved Data
-- Full-screen ban overlay shown to banned players
+- `/warn {username} {reason...}` — warns a player with a dismissible full-screen overlay (session only)
+- `/kick {username} {reason...}` — kicks a connected player from the game
+- Bans **persist across reconnects** via the Save API
+- Warnings are **session-only** and do not persist across reconnects
+- Full-screen ban overlay shown to banned players (non-dismissible)
+- Full-screen warn overlay shown to warned players (dismissible via a Close button)
 - Banned players are **frozen**, **cannot use abilities**, and **cannot interact** with anything
+- Temp bans **expire automatically** — even if the player stays online
 - Commands are restricted to **game owner and editors only**
 
 ---
 
 ## Setup
 
-There are two paths depending on whether you're starting from scratch with a clone of this project, or dropping the ban system into your own existing game.
+There are two paths depending on whether you're starting from scratch with a clone of this project, or dropping the moderation system into your own existing game.
 
 ---
 
@@ -36,7 +42,6 @@ id:   "game id here"
 
 Replace them with your actual game name and game ID from your game link:
 
-example:
 ```
 name: "Fat Simulator"
 id:   "654eedec2412b8afb8a993ca"
@@ -44,24 +49,32 @@ id:   "654eedec2412b8afb8a993ca"
 
 > You can find your game ID in your public games link.
 
-**2. You're done.** The ban system is already wired up — `ban_system.csl` is included and `main.csl` already has all the hooks in place. Jump straight to [Using the Commands](#using-the-commands).
+**2. You're done.** All systems are already wired up — `ban_system.csl`, `warn_system.csl`, and `kick_system.csl` are included and `main.csl` already has all the hooks in place. Jump straight to [Using the Commands](#using-the-commands).
 
 ---
 
 ### Path B — Adding to an Existing Game
 
-If you already have a game and just want to drop the ban system in, follow these steps.
+If you already have a game and just want to drop these systems in, follow these steps.
 
-**1. Copy `ban_system.csl`** into your project alongside your existing `.csl` files. Don't modify it — it's self-contained.
+**1. Copy the system files** into your project alongside your existing `.csl` files. Don't modify them — they are self-contained.
 
-**2. Hook it into your `main.csl`** by adding the following calls in the matching places:
+- `ban_system.csl`
+- `warn_system.csl`
+- `kick_system.csl`
 
-#### On your `Player` class, add the two fields:
+**2. Hook them into your `main.csl`** by adding the following fields and calls in the matching places.
+
+#### On your `Player` class, add these fields:
 
 ```csl
 Player :: class : Player_Base {
-    is_banned:  bool;
-    ban_reason: string;
+    is_banned:           bool;
+    ban_reason:          string;
+    ban_expires_at_s:    s64;
+    ban_freeze_applied:  bool;
+    is_warned:           bool;
+    warn_reason:         string;
 
     // ... rest of your player class
 }
@@ -75,22 +88,34 @@ ao_start :: method() {
 }
 ```
 
-#### In `Player.ao_update` — freeze banned players every frame:
+#### In `Player.ao_update` — handle ban expiry and freeze:
 
 ```csl
 ao_update :: method(dt: float) {
-    if is_banned {
-        add_freeze_reason("banned");  // ← add this
+    // Clear temp bans once they expire, even if the player stays online.
+    current_time_s := (get_nanoseconds_since_epoch() / 1000000000).(s64);
+    if is_banned && ban_expires_at_s > 0 && current_time_s >= ban_expires_at_s {
+        clear_ban_state(this);  // ← add this block
+    }
+
+    // Apply the freeze once while banned, and remove it once when unbanned.
+    if is_banned && !ban_freeze_applied {
+        add_freeze_reason("banned");
+        ban_freeze_applied = true;
+    } else if !is_banned && ban_freeze_applied {
+        remove_freeze_reason("banned");
+        ban_freeze_applied = false;
     }
 }
 ```
 
-#### In `Player.ao_late_update` — draw the ban screen:
+#### In `Player.ao_late_update` — draw the warn and ban screens:
 
 ```csl
 ao_late_update :: method(dt: float) {
     if is_local_or_server() {
-        draw_ban_screen(this);  // ← add this
+        draw_warn_screen(this);  // ← add this
+        draw_ban_screen(this);   // ← add this
     }
 }
 ```
@@ -117,15 +142,15 @@ ao_can_use_interactable :: method(interactable: Interactable) -> bool {
 }
 ```
 
-That's everything. The `/ban` and `/unban` commands are automatically registered via `@chat_command` — no extra registration needed.
+That's everything. All commands are automatically registered via `@chat_command` — no extra registration needed.
 
 ---
 
 ## Using the Commands
 
-Both commands are restricted to the **game owner and editors** only for now, this may change later on.
+All commands are restricted to the **game owner and editors** only.
 
-### Ban a player
+### Ban a player (permanent)
 
 ```
 /ban {username} {reason}
@@ -136,8 +161,24 @@ The reason can be multiple words — everything after the username is captured.
 ```
 /ban Matt Exploiting and scamming
 /ban ot_golden Spamming the chat
-/ban Sparkbot No reason given
+/ban Mas No reason given
 ```
+
+### Temp ban a player
+
+```
+/tempban {username} {duration} {reason}
+```
+
+Duration format: a number followed by a unit — `m` (minutes), `h` (hours), `d` (days), or `w` (weeks). Maximum duration is `6w`.
+
+```
+/tempban Matt 1h Spamming the chat
+/tempban ot_golden 7d Exploiting
+/tempban Mas 2w Repeated offenses
+```
+
+The ban screen shows the time remaining and updates live. The ban expires automatically whether the player is online or offline.
 
 ### Unban a player
 
@@ -149,29 +190,56 @@ The reason can be multiple words — everything after the username is captured.
 /unban ot_golden
 ```
 
-> **Note:** The player must be **currently connected** to the game for `/ban` and `/unban` to work. The ban state itself persists — if you ban someone while they're online, they will still be banned when they rejoin.
+### Warn a player
+
+```
+/warn {username} {reason}
+```
+
+The reason can be multiple words.
+
+```
+/warn Matt Please follow the rules
+/warn ot_golden Stop spamming
+```
+
+The warned player sees a full-screen overlay with the reason. They can dismiss it by clicking the **Close** button. Warnings are not saved — they clear when the player disconnects.
+
+### Kick a player
+
+```
+/kick {username} {reason}
+```
+
+```
+/kick Matt Breaking the rules
+/kick ot_golden No reason given
+```
+
+> **Note:** The player must be **currently connected** to the game for all commands to work. Ban state persists — if you ban someone while they're online, they will still be banned when they rejoin.
 
 ---
 
 ## How Persistence Works
 
-Ban state is saved per-player using the Save API with two keys:
+Ban state is saved per-player using the Save API. Warnings and kicks are not persisted.
 
-| Key           | Value                          |
-|---------------|--------------------------------|
-| `ban_status`  | `"1"` if banned, `"0"` if not |
-| `ban_reason`  | The reason string              |
+| Key              | Value                            |
+|------------------|----------------------------------|
+| `ban_status`     | `"1"` if banned, `"0"` if not   |
+| `ban_reason`     | The reason string                |
+| `ban_expires_s`  | Unix timestamp (seconds) of expiry, or `0` for permanent |
 
-When a player joins, `load_ban_state` reads these keys and restores their ban state automatically. When a player is unbanned, both keys are cleared.
+When a player joins, `load_ban_state` reads these keys and restores their ban state automatically. If a temp ban has already expired, it is cleared immediately on join. When a player is unbanned, all keys are cleared.
 
 ---
 
 ## File Reference
 
-| File             | Purpose                                              |
-|------------------|------------------------------------------------------|
-| `ban_system.csl` | Self-contained ban logic, commands, and UI           |
-| `main.csl`       | Your game entry point — hooks into the ban system    |
-| `ao.project`     | Project config — update `name` and `id` if cloning  |
-
----
+| File               | Purpose                                                   |
+|--------------------|-----------------------------------------------------------|
+| `ban_system.csl`   | Ban, temp ban, and unban logic, commands, and UI          |
+| `warn_system.csl`  | Warn command and dismissible warning overlay UI           |
+| `kick_system.csl`  | Kick command                                              |
+| `main.csl`         | Your game entry point — hooks into all moderation systems |
+| `ao.project`       | Project config — update `name` and `id` if cloning       |
