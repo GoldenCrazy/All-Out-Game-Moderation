@@ -29,9 +29,32 @@ There are two paths depending on whether you're starting from scratch with a clo
 
 ### Path A — Starting from a Clone of This Project
 
-If you cloned this repository and are building your game on top of it, you need to configure the project with your own game details before doing anything else.
+**1. Clone the repository**
 
-**1. Open `ao.project`** in the root of the project.
+If you have [Git](https://git-scm.com/downloads) installed, run this in a terminal:
+
+```bash
+git clone https://github.com/GoldenCrazy/All-Out-Game-Moderation.git
+```
+
+**Don't know how to use a terminal? Here's the easy way using VS Code:**
+
+1. Download and install [Visual Studio Code](https://code.visualstudio.com/) if you don't have it
+2. Open VS Code
+3. Press `Ctrl+Shift+P` (or `Cmd+Shift+P` on Mac) to open the Command Palette
+4. Type `Git: Clone` and select it
+5. Paste in this URL:
+   ```
+   https://github.com/GoldenCrazy/All-Out-Game-Moderation.git
+   ```
+6. Choose a folder on your computer to save the project into
+7. When it finishes, click **Open** to open the cloned project
+
+> If VS Code says Git isn't installed, download it from [git-scm.com](https://git-scm.com/downloads), install it, then restart VS Code and try again.
+
+Once the project is open, continue below.
+
+**2. Open `ao.project`** in the root of the project.
 
 Find these two lines:
 
@@ -49,7 +72,7 @@ id:   "654eedec2412b8afb8a993ca"
 
 > You can find your game ID in your public games link.
 
-**2. You're done.** All systems are already wired up — `ban_system.csl`, `warn_system.csl`, and `kick_system.csl` are included and `main.csl` already has all the hooks in place. Jump straight to [Using the Commands](#using-the-commands).
+**3. You're done.** All systems are already wired up — `ban_system.csl`, `warn_system.csl`, and `kick_system.csl` are included and `main.csl` already has all the hooks in place. Jump straight to [Using the Commands](#using-the-commands).
 
 ---
 
