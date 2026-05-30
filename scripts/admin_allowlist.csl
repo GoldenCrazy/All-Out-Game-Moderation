@@ -19,7 +19,7 @@ init_admin_allowlist :: proc() {
     admin_allowlist_initialized = true;
 
     // Add allowed user IDs below:
-    // allowed_admin_user_ids.append("1234567890");
+    // allowed_admin_user_ids.append("YOUR_USER_ID_HERE");
     allowed_admin_user_ids.append("66d372c41e013ebdae491c3f"); // you can change this user id
 }
 

@@ -443,7 +443,7 @@ draw_ban_screen :: proc(player: Player) {
     reason_text.color = {0.85, 0.85, 0.85, 1.0};
     UIK.text(reason_text, "Reason: %", {player.ban_reason});
 
-    UIK.panel_end(); // center
-    UIK.panel_end(); // bg
+    UIK.panel_end(); 
+    UIK.panel_end(); 
     UIK.end();
 }

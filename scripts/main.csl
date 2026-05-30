@@ -28,7 +28,7 @@ Player :: class : Player_Base {
     warn_reason:         string;
 
     ao_start :: method() {
-        // Restore ban state from save so it survives reconnects
+        // Restore ban state from save so it works with reconnects
         load_ban_state(this);
     }
 
