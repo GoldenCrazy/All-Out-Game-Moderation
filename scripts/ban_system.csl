@@ -1,17 +1,16 @@
-// ban_system.csl
+﻿// ban_system.csl
 // Admin ban/unban chat commands.
 // Ban state is persisted per-player using the Save API so it survives reconnects.
 
 BAN_SAVE_KEY             :: "ban_status";      // "1" = banned, "0" or missing = not banned
 BAN_REASON_SAVE_KEY      :: "ban_reason";
-BAN_EXPIRES_S_SAVE_KEY   :: "ban_expires_s";   // 0 = permanent ban
-BAN_EXPIRES_NS_SAVE_KEY  :: "ban_expires_ns";  // legacy key kept for migration
+BAN_EXPIRES_S_SAVE_KEY   :: "ban_expires_s";   // 0 = permanent ban in timestamp
+BAN_EXPIRES_NS_SAVE_KEY  :: "ban_expires_ns";
 TEMP_BAN_MAX_SECONDS     :: 6 * 7 * 24 * 60 * 60;
 NANOSECONDS_PER_SECOND   :: 1000000000;
 
-// ---------------------------------------------------------------------------
+
 // Called once on join inside Player.ao_start to restore persisted ban state.
-// ---------------------------------------------------------------------------
 load_ban_state :: proc(player: Player) {
     banned_val := Save.get_string(player, BAN_SAVE_KEY, "0");
     if banned_val != "1" {
@@ -285,11 +284,11 @@ resolve_tempban_target_from_parts :: proc(parts: []string) -> Player, int, bool 
     return null, 0, false;
 }
 
-// ---------------------------------------------------------------------------
+
 // /ban {username} {reason...}   — bans a currently connected player
 // Only game owner/editors can use this.
 // The reason can contain spaces — everything after the username is joined.
-// ---------------------------------------------------------------------------
+
 ban :: proc(issuer: Player, username: string, r0: string = "", r1: string = "", r2: string = "", r3: string = "", r4: string = "", r5: string = "", r6: string = "", r7: string = "", r8: string = "", r9: string = "", r10: string = "", r11: string = "") {
     target_found := false;
     target: Player = null;
@@ -325,10 +324,9 @@ ban :: proc(issuer: Player, username: string, r0: string = "", r1: string = "", 
     Notifier.notify(issuer, "Banned % for: %", {target.get_username(), reason});
 } @chat_command @owner_or_editor
 
-// ---------------------------------------------------------------------------
+
 // /tempban {username} {duration} {reason...}
 // Duration examples: 5m, 1h, 1d, 1w. Max temp ban duration is 6w.
-// ---------------------------------------------------------------------------
 tempban :: proc(issuer: Player, username: string, duration: string, r0: string = "", r1: string = "", r2: string = "", r3: string = "", r4: string = "", r5: string = "", r6: string = "", r7: string = "", r8: string = "", r9: string = "", r10: string = "", r11: string = "") {
     target_found := false;
     target: Player = null;
@@ -373,10 +371,9 @@ tempban :: proc(issuer: Player, username: string, duration: string, r0: string =
     Notifier.notify(issuer, "Temp banned % for %.", {target.get_username(), reason});
 } @chat_command @owner_or_editor
 
-// ---------------------------------------------------------------------------
+
 // /unban {username}   â€” unbans a currently connected player
 // Only game owner/editors can use this.
-// ---------------------------------------------------------------------------
 unban :: proc(issuer: Player, username: string) {
     found := false;
     for p: component_iterator(Player) {
@@ -392,10 +389,9 @@ unban :: proc(issuer: Player, username: string) {
     }
 } @chat_command @owner_or_editor
 
-// ---------------------------------------------------------------------------
-// Ban screen UI â€” call from Player.ao_late_update inside is_local_or_server()
+
+// Ban screen UI; call from Player.ao_late_update inside is_local_or_server()
 // Uses rect_window_large to cover as much of the screen as possible.
-// ---------------------------------------------------------------------------
 draw_ban_screen :: proc(player: Player) {
     if !player.is_banned {
         return;
